@@ -3,17 +3,25 @@ package store
 
 import (
 	"container/list"
+	"sync"
 	"time"
 )
 
 type lruCache struct {
+	//并发安全
+	mu          sync.RWMutex
 	maxBytes    int64                    // 最大内存容量
 	usedBytes   int64                    // 当前已使用内存
 	ll          *list.List               // 双向链表，存储缓存数据的访问顺序
-	items       map[string]*list.Element // 键到双向链表节点的映射
+	items       map[string]*list.Element // 键到双向链表节点的映射，后端是最新访问的节点
 	expiredTime map[string]time.Time     // 键到过期时间的映射
 	// 回调函数，在条目被移除时作为参数传入使用，执行函数中的内容，如清理资源等
 	onEvicted func(key string, value Value) // 某条记录被移除时的回调函数，可为nil
+	//过期策略参数
+	//cleanupInterval time.Duration
+	//cleanupTicker   *time.Ticker
+	//优雅关闭清理协程
+	//stopCleanup chan struct{}
 }
 
 // 缓存中的一个条目
@@ -79,7 +87,10 @@ func (c *lruCache) Get(key string) (value Value, ok bool) {
 
 // 从map中删除元素，并更新内存使用量
 func (c *lruCache) Delete(key string) bool {
-	//暂时不考虑锁
+	//加锁
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	//检查元素是否存在
 	if ele, ok := c.items[key]; ok {
 		c.removeElement(ele)
 		return true

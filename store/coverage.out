@@ -1,0 +1,23 @@
+mode: set
+github.com/crypt0walker/BlockCache/store/lru.go:38.42,48.2 2 1
+github.com/crypt0walker/BlockCache/store/lru.go:52.59,56.9 3 1
+github.com/crypt0walker/BlockCache/store/lru.go:56.9,59.3 2 1
+github.com/crypt0walker/BlockCache/store/lru.go:61.2,61.46 1 1
+github.com/crypt0walker/BlockCache/store/lru.go:61.46,62.35 1 1
+github.com/crypt0walker/BlockCache/store/lru.go:62.35,70.4 3 1
+github.com/crypt0walker/BlockCache/store/lru.go:74.2,80.31 5 1
+github.com/crypt0walker/BlockCache/store/lru.go:80.31,83.3 1 1
+github.com/crypt0walker/BlockCache/store/lru.go:84.2,85.20 2 1
+github.com/crypt0walker/BlockCache/store/lru.go:89.44,94.33 3 1
+github.com/crypt0walker/BlockCache/store/lru.go:94.33,97.3 2 1
+github.com/crypt0walker/BlockCache/store/lru.go:98.2,98.14 1 1
+github.com/crypt0walker/BlockCache/store/lru.go:102.54,116.24 6 1
+github.com/crypt0walker/BlockCache/store/lru.go:116.24,118.3 1 1
+github.com/crypt0walker/BlockCache/store/lru.go:122.89,127.18 3 1
+github.com/crypt0walker/BlockCache/store/lru.go:127.18,129.3 1 1
+github.com/crypt0walker/BlockCache/store/lru.go:129.8,132.3 1 1
+github.com/crypt0walker/BlockCache/store/lru.go:134.2,134.33 1 1
+github.com/crypt0walker/BlockCache/store/lru.go:134.33,141.3 4 1
+github.com/crypt0walker/BlockCache/store/lru.go:141.8,148.3 4 1
+github.com/crypt0walker/BlockCache/store/lru.go:153.2,153.12 1 1
+github.com/crypt0walker/BlockCache/store/lru.go:156.55,158.2 1 1
