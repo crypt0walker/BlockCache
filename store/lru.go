@@ -40,28 +40,41 @@ func newLRUCache(opts Options) *lruCache {
 }
 
 // Get 获取缓存项，如果存在且未过期则返回
-func (c *lruCache) Get(key string) (Value, bool) {
-	if ele, ok := c.items[key]; ok {
-		//检查是否过期
-		if expTime, exists := c.expiredTime[key]; exists {
-			if time.Now().After(expTime) {
-				//已过期，删除缓存项
-				c.removeElement(ele)
-				return nil, false
-			}
-		}
-	}
-	// 检查是否过期
-	if expTime, hasExp := c.expiredTime[key]; hasExp && time.Now().After(expTime) {
-		//若已经过期，删除该元素
-		// 异步删除过期项，避免在读锁内操作
-		go c.Delete(key)
+// c在此处是：指向lruCache实例的指针，是Receiver，方法的接收者
+func (c *lruCache) Get(key string) (value Value, ok bool) {
+	//加读锁
+	c.mu.RLock()
+	ele, ok := c.items[key]
+	if !ok {
+		c.mu.RUnlock()
 		return nil, false
 	}
-	//存在且未过期，移动到队尾表示最近使用
-	c.ll.MoveToFront(c.items[key])
-	kv := c.items[key].Value.(*lruEntry)
-	return kv.value, true
+	//存在，检查是否过期
+	if expireTime, ok := c.expiredTime[key]; ok {
+		if time.Now().After(expireTime) {
+			//已过期，删除该元素
+			//锁升级
+			c.mu.RUnlock()
+			//Delete方法会加写锁
+			//异步删除，避免阻塞
+			go c.Delete(key)
+			return nil, false
+		}
+	}
+	//未过期.或者没有设置过期时间
+	// //获取值，并释放读锁
+	entry := ele.Value.(*lruEntry)
+	value = entry.value
+	c.mu.RUnlock()
+	//将该元素移动到链表后端，表示最近使用过
+	c.mu.Lock()
+	//再次检查元素是否存在，防止在释放读锁和获取写锁之间被删除
+	if _, ok := c.items[key]; ok {
+		//注意我们代码中把后端作为最新
+		c.ll.MoveToBack(ele)
+	}
+	c.mu.Unlock()
+	return value, true
 }
 
 // 从map中删除元素，并更新内存使用量
@@ -94,18 +107,41 @@ func (c *lruCache) removeElement(elem *list.Element) {
 	}
 }
 
-func (c *lruCache) Set(key string, value Value) int {
+// Set 应该区分有设置过期时间和没有设置过期时间的情况
+func (c *lruCache) SetWithExpire(key string, value Value, duration time.Duration) error {
+	//加写锁
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	//先设置/更新过期时间
+	if duration > 0 {
+		c.expiredTime[key] = time.Now().Add(duration)
+	} else {
+		//如果duration<=0，表示不设置过期时间，删除可能存在的过期时间记录
+		delete(c.expiredTime, key)
+	}
+	//检查是否存在该key
 	if ele, ok := c.items[key]; ok {
 		// 更新已存在的条目
 		entry := ele.Value.(*lruEntry)
-		c.usedBytes -= int64(len(key) + entry.value.Len())
+		// 需要合理计算当前已经使用的内存大小：减去原有条目的大小，加上新条目的大小
+		c.usedBytes += int64(value.Len() - entry.value.Len())
 		entry.value = value
-		c.ll.MoveToFront(ele)
+		c.ll.MoveToBack(ele)
 	} else {
 		// 添加新条目
 		entry := &lruEntry{key: key, value: value}
-		c.items[key] = c.ll.PushFront(entry)
+		elem := c.ll.PushBack(entry)
+		c.items[key] = elem
+		// 更新已使用内存大小
 		c.usedBytes += int64(len(key) + value.Len())
 	}
-	return 0
+
+	// 检查是否需要淘汰旧项
+	// c.evict()
+
+	return nil
+}
+
+func (c *lruCache) Set(key string, value Value) error {
+	return c.SetWithExpire(key, value, 0)
 }

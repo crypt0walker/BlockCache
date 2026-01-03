@@ -1,10 +1,10 @@
-# KamaCache-Go
+# BlockCache
 
 一个基于 Go 语言实现的分布式缓存系统，支持一致性哈希、防缓存击穿和 gRPC 通信。
 
 ## 系统架构
 
-这张图展示了 KamaCache 的分布式集群架构。左侧是接入节点 (Node A)，右侧是数据持有节点 (Node B)。
+这张图展示了 BlockCache 的分布式集群架构。左侧是接入节点 (Node A)，右侧是数据持有节点 (Node B)。
 
 图中描绘了数据流的三段式跳跃：
 
