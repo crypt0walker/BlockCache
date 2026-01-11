@@ -53,7 +53,7 @@ func TestLRU_Expiration(t *testing.T) {
 
 	k, v := "expireKey", "123"
 	// 设置 50毫秒后过期
-	err := cache.SetWithExpire(k, String(v), 50*time.Millisecond)
+	err := cache.SetWithExpiration(k, String(v), 50*time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func TestLRU_SetWithExpire_Overlap(t *testing.T) {
 	cache := newLRUCache(Options{MaxBytes: 100})
 
 	// 1. 设置带过期的 Key
-	cache.SetWithExpire("k1", String("v1"), 100*time.Millisecond)
+	cache.SetWithExpiration("k1", String("v1"), 100*time.Millisecond)
 
 	// 2. 覆盖该 Key，但不设置过期 (duration=0)
 	cache.Set("k1", String("v2"))

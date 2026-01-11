@@ -18,10 +18,13 @@ type lruCache struct {
 	// 回调函数，在条目被移除时作为参数传入使用，执行函数中的内容，如清理资源等
 	onEvicted func(key string, value Value) // 某条记录被移除时的回调函数，可为nil
 	//过期策略参数
-	//cleanupInterval time.Duration
-	//cleanupTicker   *time.Ticker
+	cleanupInterval time.Duration
+	cleanupTicker   *time.Ticker
 	//优雅关闭清理协程
-	//stopCleanup chan struct{}
+	stopCleanup chan struct{}
+	//确保只关闭一次
+	stopOnce sync.Once // 保证只关闭一次
+
 }
 
 // 缓存中的一个条目
@@ -36,14 +39,25 @@ type lruEntry struct {
 
 // newLRUCache 创建一个新的 LRU 缓存实例，Options是预先定义的配置结构体
 func newLRUCache(opts Options) *lruCache {
+	// 设置默认清理间隔，避免对Tiker传入0值导致错误
+	cleanupInterval := opts.CleanupInterval
+	if cleanupInterval <= 0 {
+		cleanupInterval = time.Minute
+	}
 	//创建lruCache实例
 	c := &lruCache{
-		maxBytes:    opts.MaxBytes,
-		ll:          list.New(),
-		items:       make(map[string]*list.Element),
-		expiredTime: make(map[string]time.Time),
-		onEvicted:   opts.OnEvicted,
+		maxBytes:        opts.MaxBytes,
+		ll:              list.New(),
+		items:           make(map[string]*list.Element),
+		expiredTime:     make(map[string]time.Time),
+		onEvicted:       opts.OnEvicted,
+		cleanupInterval: cleanupInterval,
+		stopCleanup:     make(chan struct{}),
 	}
+	//启动时间轮询器
+	c.cleanupTicker = time.NewTicker(c.cleanupInterval)
+	//启动定期清理过期条目的协程
+	go c.cleanupLoop()
 	return c
 }
 
@@ -119,7 +133,7 @@ func (c *lruCache) removeElement(elem *list.Element) {
 }
 
 // Set 应该区分有设置过期时间和没有设置过期时间的情况
-func (c *lruCache) SetWithExpire(key string, value Value, duration time.Duration) error {
+func (c *lruCache) SetWithExpiration(key string, value Value, duration time.Duration) error {
 	//加写锁
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -147,12 +161,100 @@ func (c *lruCache) SetWithExpire(key string, value Value, duration time.Duration
 		c.usedBytes += int64(len(key) + value.Len())
 	}
 
-	// 检查是否需要淘汰旧项
-	// c.evict()
-
+	// 检查是否需要淘汰旧项，仅在超过最大内存限制时调用
+	c.removeOldest()
 	return nil
 }
 
 func (c *lruCache) Set(key string, value Value) error {
-	return c.SetWithExpire(key, value, 0)
+	return c.SetWithExpiration(key, value, 0)
+}
+
+// cleanupLoop 定期清理过期条目的协程，接收清理信号或关闭信号
+func (c *lruCache) cleanupLoop() {
+	//使用for-select结构，监听清理定时器和关闭信号
+	for {
+		select {
+		case <-c.cleanupTicker.C:
+			c.mu.Lock()
+			//过期清理
+			c.deleteExpired()
+			c.mu.Unlock()
+		case <-c.stopCleanup:
+			c.cleanupTicker.Stop()
+			return
+		}
+	}
+
+}
+
+// close 关闭缓存，停止清理协程，同时确保只关闭一次
+func (c *lruCache) Close() {
+	c.stopOnce.Do(func() {
+		if c.cleanupTicker != nil {
+			c.cleanupTicker.Stop()
+		}
+		close(c.stopCleanup)
+	})
+}
+
+// 仅在 Set 且 usedBytes > maxBytes 时调用
+// 调用者已加锁
+func (c *lruCache) removeOldest() {
+	// 只做这一件事：内存满了踢队头
+	for c.maxBytes > 0 && c.usedBytes > c.maxBytes && c.ll.Len() > 0 {
+		elem := c.ll.Front()
+		if elem != nil {
+			c.removeElement(elem)
+		}
+	}
+}
+
+// 仅在后台 cleanupLoop (Ticker) 中调用
+// 调用者已加锁（或函数内部加锁）
+func (c *lruCache) deleteExpired() {
+	// 增加限制，防止一次锁太久 (Stop-The-World)
+	const maxScan = 100
+	scanned := 0
+
+	now := time.Now()
+	for key, expTime := range c.expiredTime {
+		if now.After(expTime) {
+			if elem, ok := c.items[key]; ok {
+				c.removeElement(elem)
+			}
+		}
+
+		// 保护机制：处理了一部分就停手，释放锁给业务用
+		scanned++
+		if scanned >= maxScan {
+			break
+		}
+	}
+}
+
+// Clear 清空缓存
+func (c *lruCache) Clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// 如果设置了回调函数，遍历所有项调用回调
+	if c.onEvicted != nil {
+		for _, elem := range c.items {
+			entry := elem.Value.(*lruEntry)
+			c.onEvicted(entry.key, entry.value)
+		}
+	}
+
+	c.ll.Init()
+	c.items = make(map[string]*list.Element)
+	c.expiredTime = make(map[string]time.Time)
+	c.usedBytes = 0
+}
+
+// Len 返回缓存中的项数
+func (c *lruCache) Len() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ll.Len()
 }
