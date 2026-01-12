@@ -161,16 +161,25 @@ func (g *Group) Get(ctx context.Context, key string) (ByteView, error) {
 }
 
 // 从远端节点获取数据
+// 从远端节点获取数据
 func (g *Group) load(ctx context.Context, key string) (ByteView, error) {
 	// 使用singlefilight，确保并发请求只加载一次
 	startTime := time.Now()
-	//此处Do方法需要确保精油一个请求执行laodData，其他请求等待
-	//Do方法第一个入参为key，第二个入参为一个函数，该函数返回interface{}和error,interface{}是一个万能接口，可以返回任何类型
-	viewi, err := g.loader.Do(key,
-		func() (interface{}, error) {
-			//传入匿名函数
-			return g.loadData(ctx, key)
-		})
+
+	// 使用 DoChan 结合 context 实现超时控制
+	ch := g.loader.DoChan(key, func() (interface{}, error) {
+		return g.loadData(ctx, key)
+	})
+
+	var viewi interface{}
+	var err error
+
+	select {
+	case <-ctx.Done():
+		return ByteView{}, ctx.Err()
+	case ret := <-ch:
+		viewi, err = ret.Val, ret.Err
+	}
 
 	//记录加载时间与次数
 	loadDuration := time.Since(startTime).Nanoseconds()
@@ -178,12 +187,14 @@ func (g *Group) load(ctx context.Context, key string) (ByteView, error) {
 	atomic.AddInt64(&g.stats.loadDuration, loadDuration)
 	//添加加载次数
 	atomic.AddInt64(&g.stats.loads, 1)
+
 	if err != nil {
 		//错误次数
 		atomic.AddInt64(&g.stats.loaderErrors, 1)
 		return ByteView{}, err
 	}
-	//类型断言，由于do返回的是interface{}，而loadData返回的是ByteView，因此需要类型断言
+
+	//类型断言
 	view := viewi.(ByteView)
 
 	//设置到本地缓存
@@ -193,7 +204,6 @@ func (g *Group) load(ctx context.Context, key string) (ByteView, error) {
 		g.mainCache.Add(key, view)
 	}
 	return view, nil
-
 }
 
 // 实际加载数据的方法
@@ -207,7 +217,7 @@ func (g *Group) loadData(ctx context.Context, key string) (ByteView, error) {
 			if err == nil {
 				//统计数据记录
 				atomic.AddInt64(&g.stats.peerHits, 1)
-				return value, nil
+				return ByteView{data: value}, nil
 			}
 			//统计数据记录
 			atomic.AddInt64(&g.stats.peerMisses, 1)
