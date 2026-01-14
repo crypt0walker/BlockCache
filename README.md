@@ -1,7 +1,7 @@
 # BlockCache
 
 [![Go Version](https://img.shields.io/badge/Go-1.25%2B-blue)](https://golang.org)
-[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](integration_test.go)
 
 一个高性能、分布式、生产级的缓存系统，使用 Go 实现。支持多种缓存策略、自动服务发现、一致性哈希、防缓存击穿等特性。
@@ -302,13 +302,22 @@ BlockCache/
 
 ## 📄 License
 
-本项目采用 Apache 2.0 许可证 - 详见 [LICENSE](LICENSE) 文件
+本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+
+**致谢原始作者**:
+- 原始项目版权归 **程序员Carl** (2025) 所有
+- 本项目的修改和增强部分版权归 **crypt0walker** (2026) 所有
+- 更多信息请参阅 [NOTICE](NOTICE) 文件
 
 ## 🙏 致谢
 
-- GroupCache - 设计灵感
-- etcd - 服务发现
-- gRPC - RPC 框架
+本项目基于 [程序员Carl](https://github.com/) 的原始工作进行开发和增强。
+
+特别感谢:
+- **程序员Carl** - 原始项目作者和核心设计
+- **GroupCache** - 分布式缓存设计理念
+- **etcd** - 服务发现机制
+- **gRPC** - 高效RPC框架
 
 ## 📮 联系方式
 
