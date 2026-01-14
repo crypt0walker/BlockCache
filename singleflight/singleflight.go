@@ -4,7 +4,13 @@ import (
 	"sync"
 )
 
-// 代表正在进行或已结束的请求
+// Result is the return type of DoChan
+type Result struct {
+	Val interface{}
+	Err error
+}
+
+// call represents an ongoing or completed request
 type call struct {
 	wg  sync.WaitGroup
 	val interface{}
@@ -13,29 +19,66 @@ type call struct {
 
 // Group manages all kinds of calls
 type Group struct {
-	m sync.Map // 使用sync.Map来优化并发性能
+	mu sync.Mutex       // protects m
+	m  map[string]*call // lazily initialized
 }
 
-// Do 针对相同的key，保证多次调用Do()，都只会调用一次fn
+// Do executes fn for a given key. Subsequent calls for the same key await the result.
 func (g *Group) Do(key string, fn func() (interface{}, error)) (interface{}, error) {
-	// Check if there is already an ongoing call for this key
-	if existing, ok := g.m.Load(key); ok {
-		c := existing.(*call)
-		c.wg.Wait()         // Wait for the existing request to finish
-		return c.val, c.err // Return the result from the ongoing call
+	g.mu.Lock()
+	if g.m == nil {
+		g.m = make(map[string]*call)
 	}
-
-	// If no ongoing request, create a new one
+	if c, ok := g.m[key]; ok {
+		g.mu.Unlock()
+		c.wg.Wait()
+		return c.val, c.err
+	}
 	c := &call{}
 	c.wg.Add(1)
-	g.m.Store(key, c) // Store the call in the map
+	g.m[key] = c
+	g.mu.Unlock()
 
-	// Execute the function and set the result
 	c.val, c.err = fn()
-	c.wg.Done() // Mark the request as done
+	c.wg.Done()
 
-	// After the request is done, clean up the map
-	g.m.Delete(key)
+	g.mu.Lock()
+	delete(g.m, key)
+	g.mu.Unlock()
 
 	return c.val, c.err
+}
+
+// DoChan executes fn for a given key and returns a channel that will receive the result.
+func (g *Group) DoChan(key string, fn func() (interface{}, error)) <-chan Result {
+	ch := make(chan Result, 1)
+	g.mu.Lock()
+	if g.m == nil {
+		g.m = make(map[string]*call)
+	}
+	if c, ok := g.m[key]; ok {
+		g.mu.Unlock()
+		go func() {
+			c.wg.Wait()
+			ch <- Result{c.val, c.err}
+		}()
+		return ch
+	}
+	c := &call{}
+	c.wg.Add(1)
+	g.m[key] = c
+	g.mu.Unlock()
+
+	go func() {
+		c.val, c.err = fn()
+		c.wg.Done()
+
+		g.mu.Lock()
+		delete(g.m, key)
+		g.mu.Unlock()
+
+		ch <- Result{c.val, c.err}
+	}()
+
+	return ch
 }
