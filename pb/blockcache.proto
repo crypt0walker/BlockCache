@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package pb;
+
+option go_package = "github.com/crypt0walker/BlockCache/pb";
+
+// BlockCache 分布式缓存服务
+service BlockCache {
+  // Get 根据组名和键获取缓存值
+  rpc Get(Request) returns (ResponseForGet);
+  // Set 设置缓存值
+  rpc Set(Request) returns (ResponseForGet);
+  // Delete 删除缓存值
+  rpc Delete(Request) returns (ResponseForDelete);
+}
+
+// Request 请求消息
+message Request {
+  string group = 1;  // 缓存组名
+  string key = 2;    // 缓存键
+  bytes value = 3;   // 缓存值（Set时使用）
+}
+
+// ResponseForGet Get/Set操作的响应
+message ResponseForGet {
+  bytes value = 1;   // 返回的缓存值
+}
+
+// ResponseForDelete Delete操作的响应
+message ResponseForDelete {
+  bool value = 1;    // 删除是否成功
+}
