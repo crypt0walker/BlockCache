@@ -54,6 +54,9 @@ type Getter interface {
 // 需要有一个实现回源查询接口的函数类型
 type GetFun func(ctx context.Context, key string) ([]byte, error)
 
+// GetterFunc 是 GetFun 的别名，用于向后兼容
+type GetterFunc = GetFun
+
 // 有一个Getter的具体实现，receiver为GetFun
 func (f GetFun) Get(ctx context.Context, key string) ([]byte, error) {
 	return f(ctx, key)
@@ -125,6 +128,11 @@ func (g *Group) RegisterPeerPicker(peers PeerPicker) {
 	}
 	g.peers = peers
 	logrus.Infof("Peer picker for group %s registered", g.name)
+}
+
+// RegisterPeers 是 RegisterPeerPicker 的别名，用于向后兼容
+func (g *Group) RegisterPeers(peers PeerPicker) {
+	g.RegisterPeerPicker(peers)
 }
 
 func GetGroup(name string) *Group {
@@ -213,7 +221,7 @@ func (g *Group) loadData(ctx context.Context, key string) (ByteView, error) {
 		peer, ok, isSelf := g.peers.PickPeer(key)
 		if ok && !isSelf {
 			//正常且不是数据存储节点不是自己，则从对等节点获取数据
-			value, err := peer.GetFromPeer(ctx, key)
+			value, err := peer.Get(ctx, g.name, key)
 			if err == nil {
 				//统计数据记录
 				atomic.AddInt64(&g.stats.peerHits, 1)
@@ -237,7 +245,7 @@ func (g *Group) loadData(ctx context.Context, key string) (ByteView, error) {
 
 // getFromPeer 从其他节点获取数据
 func (g *Group) getFromPeer(ctx context.Context, peer Peer, key string) (ByteView, error) {
-	bytes, err := peer.Get(g.name, key)
+	bytes, err := peer.Get(ctx, g.name, key)
 	if err != nil {
 		return ByteView{}, fmt.Errorf("failed to get from peer: %w", err)
 	}
@@ -401,5 +409,31 @@ func DestroyAllGroups() {
 		g.Close()
 		delete(groups, name)
 		logrus.Infof("[KamaCache] destroyed cache group [%s]", name)
+	}
+}
+
+// GroupStats 导出的统计信息结构
+type GroupStats struct {
+	Loads        int64 // 加载次数
+	LocalHits    int64 // 本地缓存命中次数
+	LocalMisses  int64 // 本地缓存未命中次数
+	PeerHits     int64 // 从对等节点获取成功次数
+	PeerMisses   int64 // 从对等节点获取失败次数
+	LoaderHits   int64 // 从加载器获取成功次数
+	LoaderErrors int64 // 从加载器获取失败次数
+	LoadDuration int64 // 加载总耗时（纳秒）
+}
+
+// Stats 返回组的统计信息
+func (g *Group) Stats() GroupStats {
+	return GroupStats{
+		Loads:        atomic.LoadInt64(&g.stats.loads),
+		LocalHits:    atomic.LoadInt64(&g.stats.localHits),
+		LocalMisses:  atomic.LoadInt64(&g.stats.localMisses),
+		PeerHits:     atomic.LoadInt64(&g.stats.peerHits),
+		PeerMisses:   atomic.LoadInt64(&g.stats.peerMisses),
+		LoaderHits:   atomic.LoadInt64(&g.stats.loaderHits),
+		LoaderErrors: atomic.LoadInt64(&g.stats.loaderErrors),
+		LoadDuration: atomic.LoadInt64(&g.stats.loadDuration),
 	}
 }
